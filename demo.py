@@ -15,7 +15,7 @@
 # Contact: ps-license@tuebingen.mpg.de
 
 import os
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
+# os.environ['PYOPENGL_PLATFORM'] = 'egl'
 
 import cv2
 import time
@@ -28,6 +28,7 @@ import numpy as np
 from tqdm import tqdm
 from multi_person_tracker import MPT
 from torch.utils.data import DataLoader
+import pickle
 
 from lib.models.vibe import VIBE_Demo
 from lib.utils.renderer import Renderer
@@ -112,7 +113,7 @@ def main(args):
 
     # ========= Load pretrained weights ========= #
     pretrained_file = download_ckpt(use_3dpw=False)
-    ckpt = torch.load(pretrained_file)
+    ckpt = torch.load(pretrained_file, map_location='cpu')
     print(f'Performance of pretrained model on 3DPW: {ckpt["performance"]}')
     ckpt = ckpt['gen_state_dict']
     model.load_state_dict(ckpt, strict=False)
@@ -254,7 +255,7 @@ def main(args):
             'bboxes': bboxes,
             'frame_ids': frames,
         }
-
+        print(pred_verts, pred_verts.shape)
         vibe_results[person_id] = output_dict
 
     del model
@@ -268,7 +269,7 @@ def main(args):
     print(f'Total FPS (including model loading time): {num_frames / total_time:.2f}.')
 
     print(f'Saving output results to \"{os.path.join(output_path, "vibe_output.pkl")}\".')
-
+    pickle.dump(vibe_results, 'output/aaa.pkl')
     joblib.dump(vibe_results, os.path.join(output_path, "vibe_output.pkl"))
 
     if not args.no_render:

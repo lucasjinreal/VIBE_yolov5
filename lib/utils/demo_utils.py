@@ -277,11 +277,14 @@ def convert_crop_coords_to_orig_img(bbox, keypoints, crop_size):
           
 def prepare_rendering_results(vibe_results, nframes):
     frame_results = [{} for _ in range(nframes)]
+    # frame_results = []
     for person_id, person_data in vibe_results.items():
         for idx, frame_id in enumerate(person_data['frame_ids']):
             frame_results[frame_id][person_id] = {
                 'verts': person_data['verts'][idx],
                 'cam': person_data['orig_cam'][idx],
+                'pred_cam': person_data['pred_cam'][idx],
+                'bboxes': person_data['bboxes'][idx],
             }
 
     # naive depth ordering based on the scale of the weak perspective camera

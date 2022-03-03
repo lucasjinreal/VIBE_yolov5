@@ -78,6 +78,7 @@ class Renderer:
     def render(self, img, verts, cam, angle=None, axis=None, mesh_filename=None, color=[1.0, 1.0, 0.9]):
 
         mesh = trimesh.Trimesh(vertices=verts, faces=self.faces, process=False)
+        # mesh.show()
 
         Rx = trimesh.transformations.rotation_matrix(math.radians(180), [1, 0, 0])
         mesh.apply_transform(Rx)
@@ -90,7 +91,7 @@ class Renderer:
             mesh.apply_transform(R)
 
         sx, sy, tx, ty = cam
-
+        print(sx, sy, tx, ty)
         camera = WeakPerspectiveCamera(
             scale=[sx, sy],
             translation=[tx, ty],
