@@ -1,3 +1,32 @@
+# VIBE
+
+**VIBE** is a classic 3D pose esitmation methods. But the original version is very slow no matter on detction tracking or rendering. In this branch new version, I make it re-born.
+
+The promote are:
+
+- using YOLOv5 and DeepSort as tracking module, it's faster and accurator;
+- using `realrender` for rending, discard old and stupid pyrender;
+
+
+results:
+
+![](https://s4.ax1x.com/2022/03/04/bdFIiD.png)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------
 # VIBE: Video Inference for Human Body Pose and Shape Estimation [CVPR-2020]
 [![report](https://img.shields.io/badge/arxiv-report-red)](https://arxiv.org/abs/1912.05656) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1dFfwxZ52MN86FA6uFNypMEdFShd2euQA) [![PWC](https://img.shields.io/endpoint.svg?url=https://paperswithcode.com/badge/vibe-video-inference-for-human-body-pose-and/3d-human-pose-estimation-on-3dpw)](https://paperswithcode.com/sota/3d-human-pose-estimation-on-3dpw?p=vibe-video-inference-for-human-body-pose-and)
 
