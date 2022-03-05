@@ -17,6 +17,7 @@ from lib.dataset.inference import Inference
 from lib.utils.smooth_pose import smooth_pose
 from lib.data_utils.kp_utils import convert_kps
 from lib.utils.pose_tracker import run_posetracker
+from lib.models.smpl import get_smpl_faces
 
 from lib.utils.demo_utils import (
     smplify_runner,
@@ -44,6 +45,7 @@ def main(args):
         args.output_folder, os.path.basename(video_file).replace(".mp4", "")
     )
     output_track_res_f = os.path.join(output_path, "track_result.pkl")
+    vibe_res_f = os.path.join(output_path, "vibe_output.pkl")
     images_folder = os.path.join(
         args.output_folder, os.path.basename(video_file).replace(".mp4", ""), "raw"
     )
@@ -110,187 +112,187 @@ def main(args):
 
     person_ids = list(tracking_results.keys())
     i = 0
-    for person_id in person_ids:
-        bboxes = joints2d = None
-        if args.tracking_method == "bbox":
-            bboxes = tracking_results[person_id]["bbox"]
-        elif args.tracking_method == "pose":
-            joints2d = tracking_results[person_id]["joints2d"]
+    
+    if os.path.exists(vibe_res_f):
+        vibe_results = joblib.load(vibe_res_f)
+    else:
+        for person_id in person_ids:
+            bboxes = joints2d = None
+            if args.tracking_method == "bbox":
+                bboxes = tracking_results[person_id]["bbox"]
+            elif args.tracking_method == "pose":
+                joints2d = tracking_results[person_id]["joints2d"]
 
-        frames = tracking_results[person_id]["frames"]
+            frames = tracking_results[person_id]["frames"]
 
-        dataset = Inference(
-            image_folder=image_folder,
-            frames=frames,
-            bboxes=bboxes,
-            joints2d=joints2d,
-            scale=bbox_scale,
-        )
-
-        bboxes = dataset.bboxes
-        frames = dataset.frames
-        has_keypoints = True if joints2d is not None else False
-
-        dataloader = DataLoader(dataset, batch_size=args.vibe_batch_size, num_workers=10)
-
-        with torch.no_grad():
-            (
-                pred_cam,
-                pred_verts,
-                pred_pose,
-                pred_betas,
-                pred_joints3d,
-                smpl_joints2d,
-                norm_joints2d,
-            ) = ([], [], [], [], [], [], [])
-
-            for batch in dataloader:
-                if has_keypoints:
-                    batch, nj2d = batch
-                    norm_joints2d.append(nj2d.numpy().reshape(-1, 21, 3))
-
-                batch = batch.unsqueeze(0)
-                batch = batch.to(device)
-
-                batch_size, seqlen = batch.shape[:2]
-                output = model(batch)[-1]
-
-                pred_cam.append(
-                    output["theta"][:, :, :3].reshape(batch_size * seqlen, -1)
-                )
-                pred_verts.append(output["verts"].reshape(batch_size * seqlen, -1, 3))
-                pred_pose.append(
-                    output["theta"][:, :, 3:75].reshape(batch_size * seqlen, -1)
-                )
-                pred_betas.append(
-                    output["theta"][:, :, 75:].reshape(batch_size * seqlen, -1)
-                )
-                pred_joints3d.append(
-                    output["kp_3d"].reshape(batch_size * seqlen, -1, 3)
-                )
-                smpl_joints2d.append(
-                    output["kp_2d"].reshape(batch_size * seqlen, -1, 2)
-                )
-
-            pred_cam = torch.cat(pred_cam, dim=0)
-            pred_verts = torch.cat(pred_verts, dim=0)
-            pred_pose = torch.cat(pred_pose, dim=0)
-            pred_betas = torch.cat(pred_betas, dim=0)
-            pred_joints3d = torch.cat(pred_joints3d, dim=0)
-            smpl_joints2d = torch.cat(smpl_joints2d, dim=0)
-            del batch
-
-        # ========= [Optional] run Temporal SMPLify to refine the results ========= #
-        if args.run_smplify and args.tracking_method == "pose":
-            norm_joints2d = np.concatenate(norm_joints2d, axis=0)
-            norm_joints2d = convert_kps(norm_joints2d, src="staf", dst="spin")
-            norm_joints2d = torch.from_numpy(norm_joints2d).float().to(device)
-
-            # Run Temporal SMPLify
-            (
-                update,
-                new_opt_vertices,
-                new_opt_cam,
-                new_opt_pose,
-                new_opt_betas,
-                new_opt_joints3d,
-                new_opt_joint_loss,
-                opt_joint_loss,
-            ) = smplify_runner(
-                pred_rotmat=pred_pose,
-                pred_betas=pred_betas,
-                pred_cam=pred_cam,
-                j2d=norm_joints2d,
-                device=device,
-                batch_size=norm_joints2d.shape[0],
-                pose2aa=False,
+            dataset = Inference(
+                image_folder=image_folder,
+                frames=frames,
+                bboxes=bboxes,
+                joints2d=joints2d,
+                scale=bbox_scale,
             )
 
-            # update the parameters after refinement
-            print(
-                f"Update ratio after Temporal SMPLify: {update.sum()} / {norm_joints2d.shape[0]}"
+            bboxes = dataset.bboxes
+            frames = dataset.frames
+            has_keypoints = True if joints2d is not None else False
+
+            dataloader = DataLoader(dataset, batch_size=args.vibe_batch_size, num_workers=10)
+
+            with torch.no_grad():
+                (
+                    pred_cam,
+                    pred_verts,
+                    pred_pose,
+                    pred_betas,
+                    pred_joints3d,
+                    smpl_joints2d,
+                    norm_joints2d,
+                ) = ([], [], [], [], [], [], [])
+
+                for batch in dataloader:
+                    if has_keypoints:
+                        batch, nj2d = batch
+                        norm_joints2d.append(nj2d.numpy().reshape(-1, 21, 3))
+
+                    batch = batch.unsqueeze(0)
+                    batch = batch.to(device)
+
+                    batch_size, seqlen = batch.shape[:2]
+                    output = model(batch)[-1]
+
+                    pred_cam.append(
+                        output["theta"][:, :, :3].reshape(batch_size * seqlen, -1)
+                    )
+                    pred_verts.append(output["verts"].reshape(batch_size * seqlen, -1, 3))
+                    pred_pose.append(
+                        output["theta"][:, :, 3:75].reshape(batch_size * seqlen, -1)
+                    )
+                    pred_betas.append(
+                        output["theta"][:, :, 75:].reshape(batch_size * seqlen, -1)
+                    )
+                    pred_joints3d.append(
+                        output["kp_3d"].reshape(batch_size * seqlen, -1, 3)
+                    )
+                    smpl_joints2d.append(
+                        output["kp_2d"].reshape(batch_size * seqlen, -1, 2)
+                    )
+
+                pred_cam = torch.cat(pred_cam, dim=0)
+                pred_verts = torch.cat(pred_verts, dim=0)
+                pred_pose = torch.cat(pred_pose, dim=0)
+                pred_betas = torch.cat(pred_betas, dim=0)
+                pred_joints3d = torch.cat(pred_joints3d, dim=0)
+                smpl_joints2d = torch.cat(smpl_joints2d, dim=0)
+                del batch
+
+            # ========= [Optional] run Temporal SMPLify to refine the results ========= #
+            if args.run_smplify and args.tracking_method == "pose":
+                norm_joints2d = np.concatenate(norm_joints2d, axis=0)
+                norm_joints2d = convert_kps(norm_joints2d, src="staf", dst="spin")
+                norm_joints2d = torch.from_numpy(norm_joints2d).float().to(device)
+
+                # Run Temporal SMPLify
+                (
+                    update,
+                    new_opt_vertices,
+                    new_opt_cam,
+                    new_opt_pose,
+                    new_opt_betas,
+                    new_opt_joints3d,
+                    new_opt_joint_loss,
+                    opt_joint_loss,
+                ) = smplify_runner(
+                    pred_rotmat=pred_pose,
+                    pred_betas=pred_betas,
+                    pred_cam=pred_cam,
+                    j2d=norm_joints2d,
+                    device=device,
+                    batch_size=norm_joints2d.shape[0],
+                    pose2aa=False,
+                )
+
+                # update the parameters after refinement
+                print(
+                    f"Update ratio after Temporal SMPLify: {update.sum()} / {norm_joints2d.shape[0]}"
+                )
+                pred_verts = pred_verts.cpu()
+                pred_cam = pred_cam.cpu()
+                pred_pose = pred_pose.cpu()
+                pred_betas = pred_betas.cpu()
+                pred_joints3d = pred_joints3d.cpu()
+                pred_verts[update] = new_opt_vertices[update]
+                pred_cam[update] = new_opt_cam[update]
+                pred_pose[update] = new_opt_pose[update]
+                pred_betas[update] = new_opt_betas[update]
+                pred_joints3d[update] = new_opt_joints3d[update]
+
+            elif args.run_smplify and args.tracking_method == "bbox":
+                print(
+                    "[WARNING] You need to enable pose tracking to run Temporal SMPLify algorithm!"
+                )
+                print("[WARNING] Continuing without running Temporal SMPLify!..")
+
+            # ========= Save results to a pickle file ========= #
+            pred_cam = pred_cam.cpu().numpy()
+            pred_verts = pred_verts.cpu().numpy()
+            pred_pose = pred_pose.cpu().numpy()
+            pred_betas = pred_betas.cpu().numpy()
+            pred_joints3d = pred_joints3d.cpu().numpy()
+            smpl_joints2d = smpl_joints2d.cpu().numpy()
+
+            # Runs 1 Euro Filter to smooth out the results
+            if args.smooth:
+                min_cutoff = args.smooth_min_cutoff  # 0.004
+                beta = args.smooth_beta  # 1.5
+                print(
+                    f"Running smoothing on person {person_id}, min_cutoff: {min_cutoff}, beta: {beta}"
+                )
+                pred_verts, pred_pose, pred_joints3d = smooth_pose(
+                    pred_pose, pred_betas, min_cutoff=min_cutoff, beta=beta
+                )
+
+            orig_cam = convert_crop_cam_to_orig_img(
+                cam=pred_cam, bbox=bboxes, img_width=orig_width, img_height=orig_height
             )
-            pred_verts = pred_verts.cpu()
-            pred_cam = pred_cam.cpu()
-            pred_pose = pred_pose.cpu()
-            pred_betas = pred_betas.cpu()
-            pred_joints3d = pred_joints3d.cpu()
-            pred_verts[update] = new_opt_vertices[update]
-            pred_cam[update] = new_opt_cam[update]
-            pred_pose[update] = new_opt_pose[update]
-            pred_betas[update] = new_opt_betas[update]
-            pred_joints3d[update] = new_opt_joints3d[update]
 
-        elif args.run_smplify and args.tracking_method == "bbox":
-            print(
-                "[WARNING] You need to enable pose tracking to run Temporal SMPLify algorithm!"
+            joints2d_img_coord = convert_crop_coords_to_orig_img(
+                bbox=bboxes,
+                keypoints=smpl_joints2d,
+                crop_size=224,
             )
-            print("[WARNING] Continuing without running Temporal SMPLify!..")
+            i += 1
+            print(f"\r{i}/{len(person_ids)}", end="", flush=True)
 
-        # ========= Save results to a pickle file ========= #
-        pred_cam = pred_cam.cpu().numpy()
-        pred_verts = pred_verts.cpu().numpy()
-        pred_pose = pred_pose.cpu().numpy()
-        pred_betas = pred_betas.cpu().numpy()
-        pred_joints3d = pred_joints3d.cpu().numpy()
-        smpl_joints2d = smpl_joints2d.cpu().numpy()
+            output_dict = {
+                "pred_cam": pred_cam,
+                "orig_cam": orig_cam,
+                "verts": pred_verts,
+                "pose": pred_pose,
+                "betas": pred_betas,
+                "joints3d": pred_joints3d,
+                "joints2d": joints2d,
+                "joints2d_img_coord": joints2d_img_coord,
+                "bboxes": bboxes,
+                "frame_ids": frames,
+            }
+            vibe_results[person_id] = output_dict
 
-        # Runs 1 Euro Filter to smooth out the results
-        if args.smooth:
-            min_cutoff = args.smooth_min_cutoff  # 0.004
-            beta = args.smooth_beta  # 1.5
-            print(
-                f"Running smoothing on person {person_id}, min_cutoff: {min_cutoff}, beta: {beta}"
-            )
-            pred_verts, pred_pose, pred_joints3d = smooth_pose(
-                pred_pose, pred_betas, min_cutoff=min_cutoff, beta=beta
-            )
+        del model
 
-        orig_cam = convert_crop_cam_to_orig_img(
-            cam=pred_cam, bbox=bboxes, img_width=orig_width, img_height=orig_height
-        )
+        end = time.time()
+        fps = num_frames / (end - vibe_time)
 
-        joints2d_img_coord = convert_crop_coords_to_orig_img(
-            bbox=bboxes,
-            keypoints=smpl_joints2d,
-            crop_size=224,
-        )
-        i += 1
-        print(f"\r{i}/{len(person_ids)}", end="", flush=True)
+        print(f"VIBE FPS: {fps:.2f}")
+        total_time = time.time() - total_time
+        print(f"Total time spent: {total_time:.2f} seconds (including model loading time).")
+        print(f"Total FPS (including model loading time): {num_frames / total_time:.2f}.")
 
-        output_dict = {
-            "pred_cam": pred_cam,
-            "orig_cam": orig_cam,
-            "verts": pred_verts,
-            "pose": pred_pose,
-            "betas": pred_betas,
-            "joints3d": pred_joints3d,
-            "joints2d": joints2d,
-            "joints2d_img_coord": joints2d_img_coord,
-            "bboxes": bboxes,
-            "frame_ids": frames,
-        }
-        vibe_results[person_id] = output_dict
-
-    del model
-
-    end = time.time()
-    fps = num_frames / (end - vibe_time)
-
-    print(f"VIBE FPS: {fps:.2f}")
-    total_time = time.time() - total_time
-    print(f"Total time spent: {total_time:.2f} seconds (including model loading time).")
-    print(f"Total FPS (including model loading time): {num_frames / total_time:.2f}.")
-
-    print(f'Saving output results to "{os.path.join(output_path, "vibe_output.pkl")}".')
-    joblib.dump(vibe_results, os.path.join(output_path, "vibe_output.pkl"))
+        print(f'Saving output results to "{os.path.join(output_path, "vibe_output.pkl")}".')
+        joblib.dump(vibe_results, vibe_res_f)
 
     if not args.no_render:
-        renderer = Renderer(
-            resolution=(orig_width, orig_height),
-            orig_img=True,
-            wireframe=args.wireframe,
-        )
+        faces = get_smpl_faces()
 
         output_img_folder = f"{image_folder}_output"
         os.makedirs(output_img_folder, exist_ok=True)
@@ -338,7 +340,7 @@ def main(args):
                 frame_verts = convert_vertices_to_ori_img(
                     frame_verts, pred_cam[0], pred_cam[1:], box_scale_o2n, box_topleft
                 )
-                tri = renderer.faces.astype(np.int32)
+                tri = faces.astype(np.int32)
                 frame_verts[:, 2] = -frame_verts[:, 2]
                 img = render_human_mesh(
                     img, [frame_verts], tri, alpha=0.9, color=mc, with_bg_flag=True
