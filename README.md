@@ -12,8 +12,10 @@ results:
 
 ![](https://s4.ax1x.com/2022/03/04/bdFIiD.png)
 
+a video link:
 
-
+CPU实时的检测跟踪，同时跑3D姿态检测 - 金天的视频 - 知乎
+https://www.zhihu.com/zvideo/1483234969724538880
 
 
 
